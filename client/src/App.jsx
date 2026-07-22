@@ -75,10 +75,12 @@ function App() {
   const [showCalendar, setShowCalendar] = useState(false)
   const [currentDayKey, setCurrentDayKey] = useState(formatDateKey(new Date()))
   const [historyTasks, setHistoryTasks] = useState(getInitialHistory)
+  const safeTasks = Array.isArray(tasks) ? tasks : []
+  const safeHistoryTasks = Array.isArray(historyTasks) ? historyTasks : []
 
   useEffect(() => {
-    window.localStorage.setItem('tasks', JSON.stringify(tasks))
-  }, [tasks])
+    window.localStorage.setItem('tasks', JSON.stringify(safeTasks))
+  }, [safeTasks])
 
   useEffect(() => {
     const scheduleMidnightRefresh = () => {
@@ -97,30 +99,32 @@ function App() {
 
   useEffect(() => {
     setTasks((prevTasks) => {
-      const completedToArchive = prevTasks.filter((task) => {
+      const baseTasks = Array.isArray(prevTasks) ? prevTasks : []
+
+      const completedToArchive = baseTasks.filter((task) => {
         if (!task.completed) return false
         if (!task.completedAt) return false
         return formatDateKey(new Date(task.completedAt)) < currentDayKey
       })
 
-      if (completedToArchive.length === 0) return prevTasks
+      if (completedToArchive.length === 0) return baseTasks
 
       const completedHistory = completedToArchive.map((task) => ({
         ...task,
         archivedAt: new Date().toISOString()
       }))
-      const nextHistory = [...historyTasks, ...completedHistory]
+      const nextHistory = [...safeHistoryTasks, ...completedHistory]
 
       window.localStorage.setItem(TASKS_HISTORY_KEY, JSON.stringify(nextHistory))
       setHistoryTasks(nextHistory)
 
-      return prevTasks.filter((task) => {
+      return baseTasks.filter((task) => {
         if (!task.completed) return true
         if (!task.completedAt) return true
         return formatDateKey(new Date(task.completedAt)) >= currentDayKey
       })
     })
-  }, [currentDayKey, historyTasks])
+  }, [currentDayKey, safeHistoryTasks])
 
   const getTaskAccent = (task) => {
     if (task.estimatedTime) return 'scheduled'
@@ -139,28 +143,34 @@ function App() {
     const nextImportant = isProgramable ? false : important
 
     if (editingId) {
-      setTasks((prevTasks) => prevTasks.map((task) => task.id === editingId
-        ? {
-          ...task,
-          title: taskTitle,
-          important: nextImportant,
-          estimatedTime: nextEstimatedTime,
-          completedAt: task.completed ? task.completedAt || new Date().toISOString() : null
-        }
-        : task))
+      setTasks((prevTasks) => {
+        const baseTasks = Array.isArray(prevTasks) ? prevTasks : []
+        return baseTasks.map((task) => task.id === editingId
+          ? {
+            ...task,
+            title: taskTitle,
+            important: nextImportant,
+            estimatedTime: nextEstimatedTime,
+            completedAt: task.completed ? task.completedAt || new Date().toISOString() : null
+          }
+          : task)
+      })
       setEditingId(null)
     } else {
-      setTasks((prevTasks) => [
-        ...prevTasks,
-        {
-          id: Date.now(),
-          title: taskTitle,
-          completed: false,
-          completedAt: null,
-          important: nextImportant,
-          estimatedTime: nextEstimatedTime
-        }
-      ])
+      setTasks((prevTasks) => {
+        const baseTasks = Array.isArray(prevTasks) ? prevTasks : []
+        return [
+          ...baseTasks,
+          {
+            id: Date.now(),
+            title: taskTitle,
+            completed: false,
+            completedAt: null,
+            important: nextImportant,
+            estimatedTime: nextEstimatedTime
+          }
+        ]
+      })
     }
 
     const nextDate = nextEstimatedTime ? formatDateKey(new Date(nextEstimatedTime)) : selectedDate
@@ -174,20 +184,26 @@ function App() {
   }
 
   const handleDelete = (id) => {
-    setTasks((prevTasks) => prevTasks.filter((task) => task.id !== id))
+    setTasks((prevTasks) => {
+      const baseTasks = Array.isArray(prevTasks) ? prevTasks : []
+      return baseTasks.filter((task) => task.id !== id)
+    })
   }
 
   const handleToggle = (id) => {
-    setTasks((prevTasks) => prevTasks.map((task) => {
-      if (task.id !== id) return task
+    setTasks((prevTasks) => {
+      const baseTasks = Array.isArray(prevTasks) ? prevTasks : []
+      return baseTasks.map((task) => {
+        if (task.id !== id) return task
 
-      const nextCompleted = !task.completed
-      return {
-        ...task,
-        completed: nextCompleted,
-        completedAt: nextCompleted ? new Date().toISOString() : null
-      }
-    }))
+        const nextCompleted = !task.completed
+        return {
+          ...task,
+          completed: nextCompleted,
+          completedAt: nextCompleted ? new Date().toISOString() : null
+        }
+      })
+    })
   }
 
   const startEdit = (task) => {
@@ -217,7 +233,7 @@ function App() {
   }, [currentMonth])
 
   const tasksByDate = useMemo(() => {
-    return tasks.reduce((accumulator, task) => {
+    return safeTasks.reduce((accumulator, task) => {
       if (!task.estimatedTime) return accumulator
 
       const dayKey = formatDateKey(new Date(task.estimatedTime))
@@ -227,12 +243,12 @@ function App() {
       accumulator[dayKey].push(task)
       return accumulator
     }, {})
-  }, [tasks])
+  }, [safeTasks])
 
   const selectedDayTasks = useMemo(() => tasksByDate[selectedDate] || [], [selectedDate, tasksByDate])
 
   const visibleTasks = useMemo(() => {
-    return tasks.filter((task) => {
+    return safeTasks.filter((task) => {
       if (!task.estimatedTime) return true
 
       const scheduledDate = new Date(task.estimatedTime)
@@ -240,10 +256,10 @@ function App() {
 
       return formatDateKey(scheduledDate) <= currentDayKey
     })
-  }, [tasks, currentDayKey])
+  }, [safeTasks, currentDayKey])
 
   const scheduledFutureTasks = useMemo(() => {
-    return tasks
+    return safeTasks
       .filter((task) => {
         if (!task.estimatedTime) return false
 
@@ -253,15 +269,15 @@ function App() {
         return formatDateKey(scheduledDate) > currentDayKey
       })
       .sort((taskA, taskB) => new Date(taskA.estimatedTime) - new Date(taskB.estimatedTime))
-  }, [tasks, currentDayKey])
+  }, [safeTasks, currentDayKey])
 
   const historyTasksSorted = useMemo(() => {
-    return [...historyTasks].sort((taskA, taskB) => {
+    return [...safeHistoryTasks].sort((taskA, taskB) => {
       const dateA = new Date(taskA.archivedAt || taskA.completedAt || 0)
       const dateB = new Date(taskB.archivedAt || taskB.completedAt || 0)
       return dateB - dateA
     })
-  }, [historyTasks])
+  }, [safeHistoryTasks])
 
   const tasksToRender = activeSection === 'programadas'
     ? scheduledFutureTasks
