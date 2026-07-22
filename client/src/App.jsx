@@ -299,7 +299,7 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" translate="no">
       <section className="task-card">
         <button
           type="button"
