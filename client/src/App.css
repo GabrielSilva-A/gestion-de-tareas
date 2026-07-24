@@ -24,6 +24,123 @@ body {
   box-shadow: 0 12px 35px rgba(15, 23, 42, 0.08);
 }
 
+.auth-shell {
+  align-items: center;
+}
+
+.auth-card {
+  width: min(100%, 520px);
+}
+
+.auth-card h1 {
+  margin: 0;
+  font-size: 1.8rem;
+}
+
+.auth-subtitle {
+  margin: 8px 0 16px;
+  color: #475569;
+}
+
+.auth-mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.auth-mode-switch button {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #e2e8f0;
+  cursor: pointer;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.auth-mode-switch button.active {
+  background: #1d4ed8;
+  color: #f8fafc;
+}
+
+.auth-form {
+  display: grid;
+  gap: 10px;
+}
+
+.auth-form input {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 11px 12px;
+}
+
+.auth-form button {
+  border: none;
+  border-radius: 10px;
+  background: #16a34a;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 11px 14px;
+}
+
+.auth-form button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.auth-error {
+  margin: 0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 0.92rem;
+}
+
+.session-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.session-header p {
+  margin: 3px 0 0;
+  color: #64748b;
+  font-size: 0.88rem;
+}
+
+.logout-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: #334155;
+  color: #f8fafc;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.api-error,
+.api-loading {
+  margin: 0 0 12px;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 0.92rem;
+}
+
+.api-error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.api-loading {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
 .top-actions {
   display: flex;
   align-items: center;
@@ -46,6 +163,7 @@ body {
 
 .history-btn.active-mode {
   background: #7c3aed;
+  min-width: 170px;
 }
 
 .history-btn.back-mode {
@@ -603,6 +721,15 @@ body {
 }
 
 @media (max-width: 720px) {
+  .session-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .logout-btn {
+    width: 100%;
+  }
+
   .top-actions {
     justify-content: stretch;
   }

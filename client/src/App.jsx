@@ -1,32 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
+import AuthScreen from './features/auth/AuthScreen'
+import { authApi, tasksApi } from './lib/api'
 import './App.css'
 
-const defaultTasks = [
-  { id: 1, title: 'Aprender React', completed: false, completedAt: null, important: true, estimatedTime: '', categories: [] },
-  { id: 2, title: 'Revisar proyecto', completed: false, completedAt: null, important: false, estimatedTime: '2026-07-22T18:00', categories: [] }
-]
+const SESSION_TOKEN_KEY = 'sessionToken'
+const SESSION_USER_KEY = 'sessionUser'
 
-const TASKS_HISTORY_KEY = 'tasksHistory'
-
-const getInitialTasks = () => {
-  if (typeof window === 'undefined') return defaultTasks
+const getStoredSession = () => {
+  if (typeof window === 'undefined') return null
 
   try {
-    const savedTasks = window.localStorage.getItem('tasks')
-    return savedTasks ? JSON.parse(savedTasks) : defaultTasks
-  } catch {
-    return defaultTasks
-  }
-}
+    const token = window.localStorage.getItem(SESSION_TOKEN_KEY)
+    const rawUser = window.localStorage.getItem(SESSION_USER_KEY)
+    if (!token || !rawUser) return null
 
-const getInitialHistory = () => {
-  if (typeof window === 'undefined') return []
-
-  try {
-    const savedHistory = window.localStorage.getItem(TASKS_HISTORY_KEY)
-    return savedHistory ? JSON.parse(savedHistory) : []
+    const user = JSON.parse(rawUser)
+    return { token, user }
   } catch {
-    return []
+    return null
   }
 }
 
@@ -62,7 +53,8 @@ const formatDateTimeLabel = (value) => {
 }
 
 function App() {
-  const [tasks, setTasks] = useState(getInitialTasks)
+  const [session, setSession] = useState(getStoredSession)
+  const [tasks, setTasks] = useState([])
   const [title, setTitle] = useState('')
   const [important, setImportant] = useState(false)
   const [estimatedTime, setEstimatedTime] = useState('')
@@ -74,13 +66,50 @@ function App() {
   const [selectedDate, setSelectedDate] = useState(formatDateKey(new Date()))
   const [showCalendar, setShowCalendar] = useState(false)
   const [currentDayKey, setCurrentDayKey] = useState(formatDateKey(new Date()))
-  const [historyTasks, setHistoryTasks] = useState(getInitialHistory)
+  const [tasksLoading, setTasksLoading] = useState(false)
+  const [tasksError, setTasksError] = useState('')
   const safeTasks = Array.isArray(tasks) ? tasks : []
-  const safeHistoryTasks = Array.isArray(historyTasks) ? historyTasks : []
+
+  const runTaskAction = async (action, fallbackMessage) => {
+    try {
+      setTasksError('')
+      return await action()
+    } catch (error) {
+      setTasksError(error.message || fallbackMessage)
+      if (error.message?.toLowerCase().includes('token')) {
+        setSession(null)
+      }
+      return null
+    }
+  }
+
+  const loadTasks = async (token) => {
+    setTasksLoading(true)
+    await runTaskAction(async () => {
+      const data = await tasksApi.list(token)
+      setTasks(Array.isArray(data) ? data : [])
+    }, 'No se pudieron cargar las tareas.')
+    setTasksLoading(false)
+  }
 
   useEffect(() => {
-    window.localStorage.setItem('tasks', JSON.stringify(safeTasks))
-  }, [safeTasks])
+    if (typeof window === 'undefined') return
+
+    if (!session) {
+      window.localStorage.removeItem(SESSION_TOKEN_KEY)
+      window.localStorage.removeItem(SESSION_USER_KEY)
+      setTasks([])
+      return
+    }
+
+    window.localStorage.setItem(SESSION_TOKEN_KEY, session.token)
+    window.localStorage.setItem(SESSION_USER_KEY, JSON.stringify(session.user))
+  }, [session])
+
+  useEffect(() => {
+    if (!session?.token) return
+    loadTasks(session.token)
+  }, [session?.token])
 
   useEffect(() => {
     const scheduleMidnightRefresh = () => {
@@ -97,44 +126,16 @@ function App() {
     return () => window.clearTimeout(timeoutId)
   }, [currentDayKey])
 
-  useEffect(() => {
-    setTasks((prevTasks) => {
-      const baseTasks = Array.isArray(prevTasks) ? prevTasks : []
-
-      const completedToArchive = baseTasks.filter((task) => {
-        if (!task.completed) return false
-        if (!task.completedAt) return false
-        return formatDateKey(new Date(task.completedAt)) < currentDayKey
-      })
-
-      if (completedToArchive.length === 0) return baseTasks
-
-      const completedHistory = completedToArchive.map((task) => ({
-        ...task,
-        archivedAt: new Date().toISOString()
-      }))
-      const nextHistory = [...safeHistoryTasks, ...completedHistory]
-
-      window.localStorage.setItem(TASKS_HISTORY_KEY, JSON.stringify(nextHistory))
-      setHistoryTasks(nextHistory)
-
-      return baseTasks.filter((task) => {
-        if (!task.completed) return true
-        if (!task.completedAt) return true
-        return formatDateKey(new Date(task.completedAt)) >= currentDayKey
-      })
-    })
-  }, [currentDayKey, safeHistoryTasks])
-
   const getTaskAccent = (task) => {
     if (task.estimatedTime) return 'scheduled'
     if (task.important) return 'important'
     return 'normal'
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
 
+    if (!session?.token) return
     if (!title.trim()) return
 
     const taskTitle = title.trim()
@@ -142,35 +143,33 @@ function App() {
     const nextEstimatedTime = isProgramable ? estimatedTime : ''
     const nextImportant = isProgramable ? false : important
 
-    if (editingId) {
-      setTasks((prevTasks) => {
-        const baseTasks = Array.isArray(prevTasks) ? prevTasks : []
-        return baseTasks.map((task) => task.id === editingId
-          ? {
-            ...task,
-            title: taskTitle,
-            important: nextImportant,
-            estimatedTime: nextEstimatedTime,
-            completedAt: task.completed ? task.completedAt || new Date().toISOString() : null
-          }
-          : task)
-      })
+    if (editingId !== null) {
+      const updatedTask = await runTaskAction(async () => {
+        return tasksApi.update(session.token, editingId, {
+          title: taskTitle,
+          important: nextImportant,
+          estimatedTime: nextEstimatedTime || null,
+        })
+      }, 'No se pudo actualizar la tarea.')
+
+      if (!updatedTask) return
+
+      setTasks((prevTasks) => prevTasks.map((task) => (task.id === editingId ? updatedTask : task)))
       setEditingId(null)
     } else {
-      setTasks((prevTasks) => {
-        const baseTasks = Array.isArray(prevTasks) ? prevTasks : []
-        return [
-          ...baseTasks,
-          {
-            id: Date.now(),
-            title: taskTitle,
-            completed: false,
-            completedAt: null,
-            important: nextImportant,
-            estimatedTime: nextEstimatedTime
-          }
-        ]
-      })
+      const newTask = await runTaskAction(async () => {
+        return tasksApi.create(session.token, {
+          title: taskTitle,
+          completed: false,
+          completedAt: null,
+          important: nextImportant,
+          estimatedTime: nextEstimatedTime || null,
+          categories: [],
+        })
+      }, 'No se pudo crear la tarea.')
+
+      if (!newTask) return
+      setTasks((prevTasks) => [newTask, ...prevTasks])
     }
 
     const nextDate = nextEstimatedTime ? formatDateKey(new Date(nextEstimatedTime)) : selectedDate
@@ -183,27 +182,38 @@ function App() {
     setShowTaskForm(false)
   }
 
-  const handleDelete = (id) => {
-    setTasks((prevTasks) => {
-      const baseTasks = Array.isArray(prevTasks) ? prevTasks : []
-      return baseTasks.filter((task) => task.id !== id)
-    })
+  const handleDelete = async (id) => {
+    if (!session?.token) return
+
+    const deleted = await runTaskAction(async () => {
+      await tasksApi.remove(session.token, id)
+      return true
+    }, 'No se pudo eliminar la tarea.')
+
+    if (!deleted) return
+
+    setTasks((prevTasks) => prevTasks.filter((task) => task.id !== id))
   }
 
-  const handleToggle = (id) => {
-    setTasks((prevTasks) => {
-      const baseTasks = Array.isArray(prevTasks) ? prevTasks : []
-      return baseTasks.map((task) => {
-        if (task.id !== id) return task
+  const handleToggle = async (id) => {
+    if (!session?.token) return
 
-        const nextCompleted = !task.completed
-        return {
-          ...task,
-          completed: nextCompleted,
-          completedAt: nextCompleted ? new Date().toISOString() : null
-        }
+    const currentTask = safeTasks.find((task) => task.id === id)
+    if (!currentTask) return
+
+    const nextCompleted = !currentTask.completed
+    const nextCompletedAt = nextCompleted ? new Date().toISOString() : null
+
+    const updatedTask = await runTaskAction(async () => {
+      return tasksApi.update(session.token, id, {
+        completed: nextCompleted,
+        completedAt: nextCompletedAt,
       })
-    })
+    }, 'No se pudo actualizar la tarea.')
+
+    if (!updatedTask) return
+
+    setTasks((prevTasks) => prevTasks.map((task) => (task.id === id ? updatedTask : task)))
   }
 
   const startEdit = (task) => {
@@ -249,6 +259,7 @@ function App() {
 
   const visibleTasks = useMemo(() => {
     return safeTasks.filter((task) => {
+      if (task.completed) return false
       if (!task.estimatedTime) return true
 
       const scheduledDate = new Date(task.estimatedTime)
@@ -261,6 +272,7 @@ function App() {
   const scheduledFutureTasks = useMemo(() => {
     return safeTasks
       .filter((task) => {
+        if (task.completed) return false
         if (!task.estimatedTime) return false
 
         const scheduledDate = new Date(task.estimatedTime)
@@ -272,12 +284,14 @@ function App() {
   }, [safeTasks, currentDayKey])
 
   const historyTasksSorted = useMemo(() => {
-    return [...safeHistoryTasks].sort((taskA, taskB) => {
-      const dateA = new Date(taskA.archivedAt || taskA.completedAt || 0)
-      const dateB = new Date(taskB.archivedAt || taskB.completedAt || 0)
+    return safeTasks
+      .filter((task) => task.completed)
+      .sort((taskA, taskB) => {
+      const dateA = new Date(taskA.completedAt || 0)
+      const dateB = new Date(taskB.completedAt || 0)
       return dateB - dateA
     })
-  }, [safeHistoryTasks])
+  }, [safeTasks])
 
   const tasksToRender = activeSection === 'programadas'
     ? scheduledFutureTasks
@@ -298,9 +312,46 @@ function App() {
     }
   }
 
+  const handleAuthSuccess = (payload) => {
+    setSession({ token: payload.token, user: payload.user })
+    setTasksError('')
+  }
+
+  const handleLogin = async (credentials) => {
+    const payload = await authApi.login(credentials)
+    handleAuthSuccess(payload)
+  }
+
+  const handleRegister = async (userData) => {
+    const payload = await authApi.register(userData)
+    handleAuthSuccess(payload)
+  }
+
+  const handleLogout = () => {
+    setSession(null)
+    setTasks([])
+    setShowTaskForm(false)
+    setEditingId(null)
+  }
+
+  if (!session?.token) {
+    return <AuthScreen onLogin={handleLogin} onRegister={handleRegister} />
+  }
+
   return (
     <main className="app-shell" translate="no">
       <section className="task-card">
+        <header className="session-header">
+          <div>
+            <strong>{session.user?.name || 'Usuario'}</strong>
+            <p>{session.user?.email || ''}</p>
+          </div>
+          <button type="button" className="logout-btn" onClick={handleLogout}>Cerrar sesión</button>
+        </header>
+
+        {tasksError && <p className="api-error">{tasksError}</p>}
+        {tasksLoading && <p className="api-loading">Cargando tareas...</p>}
+
         <button
           type="button"
           className="add-task-btn"
