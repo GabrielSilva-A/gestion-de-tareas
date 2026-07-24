@@ -52,6 +52,32 @@ const formatDateTimeLabel = (value) => {
   })
 }
 
+const toApiDateTime = (localDateTimeValue) => {
+  if (!localDateTimeValue) return null
+
+  const parsedDate = new Date(localDateTimeValue)
+  if (Number.isNaN(parsedDate.getTime())) return null
+
+  return parsedDate.toISOString()
+}
+
+const toInputDateTime = (apiDateTimeValue) => {
+  if (!apiDateTimeValue) return ''
+
+  const parsedDate = new Date(apiDateTimeValue)
+  if (Number.isNaN(parsedDate.getTime())) {
+    return String(apiDateTimeValue).slice(0, 16)
+  }
+
+  const year = parsedDate.getFullYear()
+  const month = String(parsedDate.getMonth() + 1).padStart(2, '0')
+  const day = String(parsedDate.getDate()).padStart(2, '0')
+  const hours = String(parsedDate.getHours()).padStart(2, '0')
+  const minutes = String(parsedDate.getMinutes()).padStart(2, '0')
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}
+
 function App() {
   const [session, setSession] = useState(getStoredSession)
   const [tasks, setTasks] = useState([])
@@ -148,7 +174,7 @@ function App() {
         return tasksApi.update(session.token, editingId, {
           title: taskTitle,
           important: nextImportant,
-          estimatedTime: nextEstimatedTime || null,
+          estimatedTime: toApiDateTime(nextEstimatedTime),
         })
       }, 'No se pudo actualizar la tarea.')
 
@@ -163,7 +189,7 @@ function App() {
           completed: false,
           completedAt: null,
           important: nextImportant,
-          estimatedTime: nextEstimatedTime || null,
+          estimatedTime: toApiDateTime(nextEstimatedTime),
           categories: [],
         })
       }, 'No se pudo crear la tarea.')
@@ -220,7 +246,7 @@ function App() {
     setEditingId(task.id)
     setTitle(task.title)
     setImportant(task.estimatedTime ? false : task.important)
-    setEstimatedTime(task.estimatedTime || '')
+    setEstimatedTime(toInputDateTime(task.estimatedTime))
     setIsProgramable(Boolean(task.estimatedTime))
     setActiveSection(task.estimatedTime ? 'programadas' : 'diarias')
     setShowTaskForm(true)
@@ -401,6 +427,7 @@ function App() {
             {isProgramable && (
               <input
                 type="datetime-local"
+                className="scheduled-datetime-input"
                 value={estimatedTime}
                 onChange={(e) => setEstimatedTime(e.target.value)}
               />

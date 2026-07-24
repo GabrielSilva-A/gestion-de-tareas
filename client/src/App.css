@@ -276,6 +276,13 @@ body {
   border-radius: 8px;
 }
 
+.scheduled-datetime-input {
+  width: min(100%, 290px);
+  min-height: 44px;
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+
 .task-form button,
 .task-actions button,
 .calendar-header button {
@@ -721,6 +728,14 @@ body {
 }
 
 @media (max-width: 720px) {
+  .scheduled-datetime-input {
+    width: 100%;
+    min-height: 40px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-size: 0.92rem;
+  }
+
   .session-header {
     align-items: flex-start;
     flex-direction: column;
